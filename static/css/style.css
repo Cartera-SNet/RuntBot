@@ -256,3 +256,18 @@ button { font-family: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+
+/* Plantilla Excel */
+.template-link {
+  margin-top: 10px;
+  font-size: 13px;
+  text-align: center;
+}
+.template-link a {
+  color: #0B2A6F;
+  font-weight: 600;
+  text-decoration: none;
+}
+.template-link a:hover { text-decoration: underline; color: #D4145A; }
+.template-link .muted { color: #6b7280; font-weight: 400; }

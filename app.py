@@ -1,10 +1,9 @@
 """
-RUNT BOT - Aplicación Flask principal.
+RUNT Downloader - Aplicación Flask principal.
 Automatización de consultas vehiculares RUNT por Placa y Cédula.
 """
 
 import os
-import io
 import json
 import re
 import uuid
@@ -16,7 +15,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from services.excel_service import load_excel, build_template, RE_PLACA, RE_CEDULA, _clean_placa, _clean_cedula
+from services.excel_service import load_excel, RE_PLACA, RE_CEDULA, _clean_placa, _clean_cedula
 from services.runt_service import RuntService, run_async
 from services.pdf_service import generate_pdf
 
@@ -56,7 +55,7 @@ def _requerir_login():
         return (
             "Acceso restringido.",
             401,
-            {"WWW-Authenticate": 'Basic realm="RUNT BOT"'},
+            {"WWW-Authenticate": 'Basic realm="RUNT Downloader"'},
         )
 
 
@@ -113,19 +112,6 @@ def allowed_file(filename: str) -> bool:
 @app.route("/")
 def index():
     return render_template("index.html")
-
-
-@app.route("/api/plantilla")
-def descargar_plantilla():
-    """Excel de ejemplo con las columnas Placa y Cédula, para que quede
-    claro cómo armar el archivo antes de cargarlo."""
-    data = build_template()
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name="plantilla_runt.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -593,6 +579,58 @@ def api_generate_pdf():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+
+@app.route("/api/plantilla")
+def descargar_plantilla():
+    """Genera y descarga una plantilla Excel con columnas Placa y Cédula."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Consultas"
+    headers = ["Placa", "Cédula"]
+    header_font = Font(bold=True, color="FFFFFF", name="Calibri", size=11)
+    header_fill = PatternFill("solid", fgColor="0B2A6F")
+    thin = Border(
+        left=Side(style="thin", color="CCCCCC"),
+        right=Side(style="thin", color="CCCCCC"),
+        top=Side(style="thin", color="CCCCCC"),
+        bottom=Side(style="thin", color="CCCCCC"),
+    )
+    for col, h in enumerate(headers, start=1):
+        cell = ws.cell(1, col, h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = thin
+    # Filas de ejemplo
+    ejemplos = [
+        ("ABC123", "1234567890"),
+        ("XYZ789", "9876543210"),
+    ]
+    for r, (placa, cedula) in enumerate(ejemplos, start=2):
+        ws.cell(r, 1, placa).border = thin
+        ws.cell(r, 2, cedula).border = thin
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 18
+    ws.row_dimensions[1].height = 20
+    # Nota en hoja 2
+    ws2 = wb.create_sheet("Instrucciones")
+    ws2["A1"] = "Instrucciones"
+    ws2["A1"].font = Font(bold=True, size=12, color="0B2A6F")
+    ws2["A3"] = "1. Complete las columnas Placa y Cédula en la hoja 'Consultas'."
+    ws2["A4"] = "2. La placa puede ir en mayúsculas o minúsculas (se normaliza sola)."
+    ws2["A5"] = "3. La cédula debe ir sin puntos ni comas (solo números)."
+    ws2["A6"] = "4. Puede borrar las filas de ejemplo e ingresar las suyas."
+    ws2["A7"] = "5. Guarde el archivo como .xlsx y cárguelo en RUNT Downloader."
+    ws2.column_dimensions["A"].width = 80
+    import tempfile
+    tmp = Path(tempfile.gettempdir()) / "plantilla_runt.xlsx"
+    wb.save(str(tmp))
+    return send_file(str(tmp), as_attachment=True, download_name="plantilla_runt.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @app.route("/download/<filename>")
 def download_file(filename):
     path = RESULTADOS_FOLDER / secure_filename(filename)
@@ -637,7 +675,7 @@ def reset():
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print("=" * 60)
-    print("  RUNT BOT  —  Consulta Vehicular Automatizada")
+    print("  RUNT Downloader  —  Consulta Vehicular")
     print("  Abre tu navegador en: http://127.0.0.1:5050")
     print("=" * 60)
     # Railway (y la mayoría de plataformas en la nube) inyectan el puerto

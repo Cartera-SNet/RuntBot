@@ -1,4 +1,4 @@
-# RUNT BOT — Consulta Vehicular Automatizada
+# RUNT Downloader — Consulta Vehicular Automatizada
 
 Bot web local en Python que automatiza consultas de vehículos en **runtporplacas.com.co** (Consulta RUNT por Placa y Cédula).
 

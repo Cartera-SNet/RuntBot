@@ -117,21 +117,86 @@ def _kv_table(items: Dict[str, str], columns: int = 2):
 
 
 def _grid_table(tabla: Dict[str, Any]):
-    cols = tabla.get("columnas") or []
+    """Tabla genérica; si parece SOAT, usa anchos fijos para que el número
+    de póliza no se cruce con las fechas y el estado VIGENTE se vea en verde."""
+    cols = [str(c or "").strip() for c in (tabla.get("columnas") or [])]
     filas = tabla.get("filas") or []
     if not cols or not filas:
         return None
     n = len(cols)
-    w = [CONTENT_W / n] * n
-    data = [[_p(c, "th") for c in cols]] + [[_p(c, "mono") for c in (f + [""] * n)[:n]] for f in filas]
+    cols_l = [c.lower() for c in cols]
+
+    # Anchos relativos pensados para la tabla real de Póliza SOAT
+    def _peso(nombre: str) -> float:
+        nrm = nombre.lower()
+        if "número" in nrm or "numero" in nrm or "póliza" in nrm or "poliza" in nrm:
+            return 1.55
+        if "entidad" in nrm:
+            return 1.70
+        if "estado" in nrm:
+            return 0.85
+        if "tarifa" in nrm or "código" in nrm or "codigo" in nrm:
+            return 0.75
+        if "fecha" in nrm:
+            return 0.95
+        return 1.0
+
+    pesos = [_peso(c) for c in cols]
+    total = sum(pesos) or n
+    w = [CONTENT_W * (p / total) for p in pesos]
+
+    # Estilos de celda
+    th_style = ParagraphStyle("soat_th", parent=S["th"], fontSize=7.2, leading=9, alignment=1)
+    cell_style = ParagraphStyle("soat_td", parent=S["mono"], fontSize=7.2, leading=9, alignment=1)
+    cell_left = ParagraphStyle("soat_td_l", parent=S["mono"], fontSize=7.2, leading=9, alignment=0)
+    ok_style = ParagraphStyle("soat_ok", parent=S["mono"], fontSize=7.5, leading=9,
+                              alignment=1, textColor=OK, fontName="Helvetica-Bold")
+
+    idx_estado = next((i for i, c in enumerate(cols_l) if "estado" in c), -1)
+    idx_entidad = next((i for i, c in enumerate(cols_l) if "entidad" in c), -1)
+    idx_poliza = next((i for i, c in enumerate(cols_l)
+                       if "póliza" in c or "poliza" in c or "número" in c or "numero" in c), 0)
+
+    header_row = [Paragraph(escape(c), th_style) for c in cols]
+    data = [header_row]
+    for f in filas:
+        cells = list(f) + [""] * n
+        cells = cells[:n]
+        row = []
+        for i, val in enumerate(cells):
+            val_s = str(val or "").strip()
+            if i == idx_estado and val_s:
+                # VIGENTE / NO VIGENTE en color
+                up = val_s.upper()
+                if "VIGENTE" in up and "NO" not in up:
+                    row.append(Paragraph(escape(val_s), ok_style))
+                else:
+                    row.append(Paragraph(escape(val_s), cell_style))
+            elif i == idx_entidad:
+                row.append(Paragraph(escape(val_s), cell_left))
+            elif i == idx_poliza:
+                # número de póliza: mono, sin romper raro
+                row.append(Paragraph(escape(val_s), cell_style))
+            else:
+                row.append(Paragraph(escape(val_s), cell_style))
+        data.append(row)
+
     t = Table(data, colWidths=w, repeatRows=1)
-    t.setStyle(TableStyle([
+    style_cmds = [
         ("BACKGROUND", (0, 0), (-1, 0), HEAD),
-        ("GRID", (0, 0), (-1, -1), 0.4, LINE),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-    ]))
+        ("GRID", (0, 0), (-1, -1), 0.35, LINE),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+    ]
+    # Filas alternas suaves
+    for r in range(1, len(data)):
+        if r % 2 == 0:
+            style_cmds.append(("BACKGROUND", (0, r), (-1, r), SOFT))
+    t.setStyle(TableStyle(style_cmds))
     return t
 
 
@@ -150,7 +215,7 @@ def _footer(canvas, doc):
     canvas.line(MARGIN, 13 * mm, PAGE_W - MARGIN, 13 * mm)
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(MUTED)
-    canvas.drawString(MARGIN, 9 * mm, f"Consulta RUNT  |  Generado el {doc._generado:%d/%m/%Y %H:%M}")
+    canvas.drawString(MARGIN, 9 * mm, f"RUNT Downloader  |  Generado el {doc._generado:%d/%m/%Y %H:%M}")
     canvas.drawRightString(PAGE_W - MARGIN, 9 * mm, f"Página {doc.page}")
     canvas.setFillColor(MAGENTA)
     canvas.rect(0, PAGE_H - 3 * mm, PAGE_W, 3 * mm, stroke=0, fill=1)
@@ -158,7 +223,7 @@ def _footer(canvas, doc):
 
 
 def _portada(story, records, generado):
-    band = Table([[Paragraph("Consulta RUNT", ParagraphStyle("t", fontName="Helvetica-Bold", fontSize=22,
+    band = Table([[Paragraph("RUNT Downloader", ParagraphStyle("t", fontName="Helvetica-Bold", fontSize=22,
                                                          leading=26, textColor=colors.white)),
                    Paragraph("Informe de consultas vehiculares", ParagraphStyle("t2", fontName="Helvetica", fontSize=11,
                                                                                 leading=14, textColor=colors.white, alignment=2))]],
@@ -239,15 +304,20 @@ def _vehiculo(story, r, n, total):
         story += [Spacer(1, 8), _section_title("Información general del vehículo"), Spacer(1, 2),
                   _kv_table(res.get("general", {}), columns=2)]
 
-    # Póliza SOAT: sección aparte (su propia captura), independiente de que
-    # la de arriba haya salido bien o no.
+    # Póliza SOAT: tabla estructurada (legible) y, si existe, captura de apoyo
     soat = res.get("soat") or {}
     story += [Spacer(1, 8), _section_title("Póliza SOAT")]
-    captura_soat = _captura_flowable(soat["captura_png"]) if soat.get("captura_png") else None
-    if captura_soat is not None:
-        story += [Spacer(1, 3), captura_soat]
+    tabla_soat = None
+    if soat.get("disponible") and (soat.get("columnas") or soat.get("filas")):
+        tabla_soat = _grid_table(soat)
+    if tabla_soat is not None:
+        story += [Spacer(1, 3), tabla_soat]
     else:
-        story += [Spacer(1, 2), _p(soat.get("mensaje") or "No disponible para este vehículo.", "small")]
+        captura_soat = _captura_flowable(soat["captura_png"]) if soat.get("captura_png") else None
+        if captura_soat is not None:
+            story += [Spacer(1, 3), captura_soat]
+        else:
+            story += [Spacer(1, 2), _p(soat.get("mensaje") or "No disponible para este vehículo.", "small")]
 
 
 def _build(records: List[Dict[str, Any]], output_path: str) -> str:
@@ -255,7 +325,7 @@ def _build(records: List[Dict[str, Any]], output_path: str) -> str:
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     generado = dt.datetime.now()
     doc = SimpleDocTemplate(output_path, pagesize=A4, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=12 * mm,
-                            bottomMargin=14 * mm, title="Consulta RUNT - Consultas vehiculares", author="Consulta RUNT")
+                            bottomMargin=14 * mm, title="RUNT Downloader - Consultas vehiculares", author="RUNT Downloader")
     doc._generado = generado
 
     story: list = []

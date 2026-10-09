@@ -1,5 +1,5 @@
 /**
- * RUNT BOT — Frontend
+ * RUNT Downloader — Frontend
  * Ajuste SOLO visual: mismos endpoints, mismos payloads y la misma lógica de
  * decisión que el original (upload -> /api/start en bucle -> CAPTCHA manual
  * cuando el OCR no resuelve -> /api/submit_captcha -> /api/generate_pdf).
