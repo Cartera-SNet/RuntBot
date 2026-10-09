@@ -441,11 +441,6 @@ class RuntService:
         )
         self.context = await self.browser.new_context(
             viewport={"width": 1280, "height": 900},
-            # Captura a doble resolución (misma distribución de la página,
-            # el doble de nitidez): sin esto, el texto de las capturas que
-            # van al PDF (sobre todo tablas densas como la de Póliza SOAT)
-            # se ve borroso al imprimirse más grande que su tamaño original.
-            device_scale_factor=2,
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -1073,36 +1068,7 @@ class RuntService:
             top_y = max(0, top_box["y"] - 6)
 
             vp = page.viewport_size or {"width": 1280, "height": 900}
-            ancho_vp = vp["width"]
-
-            # No capturar todo el ancho de la ventana: el contenido real
-            # (la tarjeta de la tabla) suele ser más angosto y queda
-            # centrado, con márgenes vacíos a los lados. Si se captura el
-            # ancho completo, al achicar la imagen para que quepa en el PDF
-            # el texto queda apretado y columnas como "Número de póliza" y
-            # las fechas terminan viéndose pegadas. Se busca el contenedor
-            # real subiendo desde el encabezado.
-            x0, ancho = 0, ancho_vp
-            try:
-                cont = await header.evaluate(
-                    """(h, vpw) => {
-                        let el = h;
-                        for (let i = 0; i < 8 && el.parentElement; i++) {
-                            el = el.parentElement;
-                            const r = el.getBoundingClientRect();
-                            if (r.width > 0 && r.width < vpw * 0.92) {
-                                return {x: r.x, width: r.width};
-                            }
-                        }
-                        return null;
-                    }""",
-                    ancho_vp,
-                )
-                if cont and cont.get("width", 0) > 150:
-                    x0 = max(0, cont["x"] - 6)
-                    ancho = min(ancho_vp - x0, cont["width"] + 12)
-            except Exception:
-                pass
+            ancho = vp["width"]
 
             bottom_y = None
             for patron in patrones_corte:
@@ -1120,10 +1086,10 @@ class RuntService:
             alto = max(80, min(alto, max_alto))
 
             if top_y + alto > vp["height"]:
-                await page.set_viewport_size({"width": ancho_vp, "height": int(top_y + alto + 100)})
+                await page.set_viewport_size({"width": ancho, "height": int(top_y + alto + 100)})
                 await page.wait_for_timeout(100)
 
-            png = await page.screenshot(clip={"x": x0, "y": top_y, "width": ancho, "height": alto})
+            png = await page.screenshot(clip={"x": 0, "y": top_y, "width": ancho, "height": alto})
             return base64.b64encode(png).decode()
         except Exception:
             return None

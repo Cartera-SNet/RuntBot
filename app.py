@@ -4,7 +4,6 @@ Automatización de consultas vehiculares RUNT por Placa y Cédula.
 """
 
 import os
-import io
 import json
 import re
 import uuid
@@ -16,7 +15,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from services.excel_service import load_excel, build_template, RE_PLACA, RE_CEDULA, _clean_placa, _clean_cedula
+from services.excel_service import load_excel, RE_PLACA, RE_CEDULA, _clean_placa, _clean_cedula
 from services.runt_service import RuntService, run_async
 from services.pdf_service import generate_pdf
 
@@ -113,19 +112,6 @@ def allowed_file(filename: str) -> bool:
 @app.route("/")
 def index():
     return render_template("index.html")
-
-
-@app.route("/api/plantilla")
-def descargar_plantilla():
-    """Excel de ejemplo con las columnas Placa y Cédula, para que quede
-    claro cómo armar el archivo antes de cargarlo."""
-    data = build_template()
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name="plantilla_runt.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
 
 
 @app.route("/api/upload", methods=["POST"])
