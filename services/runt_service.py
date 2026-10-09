@@ -982,27 +982,156 @@ class RuntService:
         return result
 
     async def _extraer_soat(self, page: Page) -> Optional[Dict[str, Any]]:
-        """Busca el texto 'Póliza SOAT' (como un Ctrl+F), hace clic en el '+'
-        para expandirla y CAPTURA la sección como imagen — no intenta leer
-        su estructura (Angular Material rara vez usa una <table> real, así
-        que adivinar filas/columnas es frágil; una captura muestra lo mismo
-        sin importar cómo esté armado el HTML por dentro)."""
+        """Expande «Póliza SOAT» y CAPTURA la sección completa del portal
+        (como se ve en pantalla), sin recomponer la tabla. También intenta
+        leer filas/columnas por si hace falta el estado en la vista previa."""
         header = await _async_find_regex(page, _accent_rx("Póliza SOAT"))
         if header is None:
             return {"disponible": False, "mensaje": "No se encontró la sección 'Póliza SOAT' en la página."}
 
         await header.scroll_into_view_if_needed()
-        await page.wait_for_timeout(150)
+        await page.wait_for_timeout(250)
         await self._click_expandir_cerca(page, header)
-        await page.wait_for_timeout(600)
+        await page.wait_for_timeout(1200)
 
-        png = await self._capturar_seccion(page, header, [
-            r"p[oó]lizas\s+de\s+responsabilidad\s+civil", r"p[oó]liza\s+andina",
-            r"certificado", r"realizar\s+otra\s+consulta", r"copyright\s+\d{4}\s+runt",
-        ])
+        # Datos estructurados (solo para badge "VIGENTE" en la UI; el PDF usa captura)
+        datos = await page.evaluate(
+            r"""() => {
+                const clean = s => (s || '').replace(/\s+/g, ' ').trim();
+                const markers = ['poliza', 'póliza', 'expedicion', 'expedición',
+                    'vigencia', 'entidad', 'tarifa', 'estado'];
+                for (const t of document.querySelectorAll('table, .mat-table, [role="table"]')) {
+                    const rect = t.getBoundingClientRect();
+                    if (rect.width < 40 || rect.height < 20) continue;
+                    let rows = [];
+                    if (t.rows && t.rows.length) {
+                        rows = [...t.rows].map(r => [...r.cells].map(c => clean(c.innerText)));
+                    } else {
+                        const headerCells = [...t.querySelectorAll('[role="columnheader"], .mat-header-cell')]
+                            .map(c => clean(c.innerText)).filter(Boolean);
+                        const bodyRows = [...t.querySelectorAll('[role="row"], .mat-row')].map(r =>
+                            [...r.querySelectorAll('[role="cell"], .mat-cell')].map(c => clean(c.innerText))
+                        ).filter(f => f.length && f.some(x => x));
+                        if (headerCells.length) rows = [headerCells, ...bodyRows];
+                    }
+                    if (rows.length < 2) continue;
+                    const hj = rows[0].join(' ').toLowerCase();
+                    if (markers.filter(m => hj.includes(m)).length < 2) continue;
+                    return {columnas: rows[0], filas: rows.slice(1).filter(f => f.some(x => x))};
+                }
+                return null;
+            }"""
+        )
+
+        # Captura REAL de la sección expandida (panel completo, legible)
+        png = await self._capturar_soat_panel(page, header)
         if not png:
+            png = await self._capturar_seccion(page, header, [
+                r"p[oó]lizas\s+de\s+responsabilidad\s+civil", r"p[oó]liza\s+andina",
+                r"certificado", r"realizar\s+otra\s+consulta", r"copyright\s+\d{4}\s+runt",
+            ], max_alto=1100)
+
+        out = {"disponible": False}
+        if datos and datos.get("filas"):
+            out["columnas"] = datos["columnas"]
+            out["filas"] = datos["filas"]
+            out["disponible"] = True
+        if png:
+            out["captura_png"] = png
+            out["disponible"] = True
+        if not out.get("disponible"):
             return {"disponible": False, "mensaje": "No se pudo capturar la sección 'Póliza SOAT'."}
-        return {"disponible": True, "captura_png": png}
+        return out
+
+    async def _capturar_soat_panel(self, page: Page, header) -> Optional[str]:
+        """Captura el panel completo de Póliza SOAT (header + tabla) a buen tamaño."""
+        try:
+            await header.scroll_into_view_if_needed()
+            await page.wait_for_timeout(200)
+            # Ampliar viewport para que la tabla no se recorte
+            vp = page.viewport_size or {"width": 1280, "height": 900}
+            await page.set_viewport_size({"width": max(vp["width"], 1400), "height": max(vp["height"], 1600)})
+            await page.wait_for_timeout(200)
+            await header.scroll_into_view_if_needed()
+            await page.wait_for_timeout(150)
+
+            box = await page.evaluate(
+                r"""() => {
+                    const norm = s => (s || '').toLowerCase()
+                        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                    // Buscar el panel/expansion que contiene "Poliza SOAT"
+                    let panel = null;
+                    for (const el of document.querySelectorAll(
+                        'mat-expansion-panel, [class*="expansion"], [class*="accordion"], section, div')) {
+                        const t = norm(el.innerText || '').slice(0, 80);
+                        if (t.includes('poliza soat') && el.getBoundingClientRect().height > 40) {
+                            panel = el;
+                            // preferir el más pequeño que aún contenga la tabla
+                            break;
+                        }
+                    }
+                    // Si hay tabla SOAT, unir header + tabla
+                    let top = null, bottom = null;
+                    const headerEl = [...document.querySelectorAll('*')].find(e => {
+                        const t = norm(e.innerText || '');
+                        return t.includes('poliza soat') && t.length < 60 && e.children.length < 15;
+                    });
+                    if (headerEl) {
+                        const r = headerEl.getBoundingClientRect();
+                        top = r.top + window.scrollY;
+                    }
+                    // tabla con columnas típicas
+                    for (const t of document.querySelectorAll('table, .mat-table, [role="table"]')) {
+                        const txt = norm(t.innerText || '');
+                        if (!(txt.includes('numero de poliza') || txt.includes('numero de poliza') ||
+                              (txt.includes('poliza') && txt.includes('vigencia')))) continue;
+                        const r = t.getBoundingClientRect();
+                        if (r.height < 20) continue;
+                        const tTop = r.top + window.scrollY;
+                        const tBot = r.bottom + window.scrollY;
+                        if (top == null) top = tTop - 40;
+                        bottom = Math.max(bottom || 0, tBot + 12);
+                    }
+                    if (panel && (top == null || bottom == null)) {
+                        const r = panel.getBoundingClientRect();
+                        top = r.top + window.scrollY;
+                        bottom = r.bottom + window.scrollY;
+                    }
+                    if (top == null || bottom == null || bottom - top < 50) return null;
+                    const marginX = 24;
+                    return {
+                        x: marginX,
+                        y: Math.max(0, top - 8),
+                        width: Math.max(600, window.innerWidth - marginX * 2),
+                        height: Math.min(1200, bottom - top + 16),
+                    };
+                }"""
+            )
+            if not box:
+                return None
+            # Playwright clip uses viewport coordinates; scroll so y is in view
+            await page.evaluate(f"window.scrollTo(0, {max(0, box['y'] - 20)})")
+            await page.wait_for_timeout(150)
+            scroll_y = await page.evaluate("window.scrollY")
+            clip = {
+                "x": max(0, box["x"]),
+                "y": max(0, box["y"] - scroll_y),
+                "width": box["width"],
+                "height": box["height"],
+            }
+            # Asegurar que el clip cabe en el viewport
+            vp2 = page.viewport_size or {"width": 1400, "height": 1600}
+            if clip["y"] + clip["height"] > vp2["height"]:
+                await page.set_viewport_size({
+                    "width": vp2["width"],
+                    "height": int(clip["y"] + clip["height"] + 80),
+                })
+                await page.wait_for_timeout(100)
+            png = await page.screenshot(clip=clip, type="png")
+            return base64.b64encode(png).decode()
+        except Exception:
+            return None
+
 
     async def _click_expandir_cerca(self, page: Page, header) -> None:
         """Hace clic en el '+' (o ícono de expandir) que está junto al

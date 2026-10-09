@@ -184,6 +184,25 @@
 </main>
 
 <div class="toast hidden" id="toast"></div>
+
+  <!-- Modal vista previa PDF -->
+  <div class="pdf-modal hidden" id="pdfModal" role="dialog" aria-modal="true" style="display:none">
+    <div class="pdf-modal-backdrop" id="pdfModalBackdrop"></div>
+    <div class="pdf-modal-box">
+      <div class="pdf-modal-head">
+        <h3 id="pdfModalTitle">Vista previa del PDF</h3>
+        <div class="pdf-modal-actions">
+          <a class="btn btn-outline btn-sm" id="pdfModalDownload" href="#" target="_blank" rel="noopener">Abrir en pestaña</a>
+          <button type="button" class="btn btn-navy btn-sm" id="pdfModalClose">Cerrar</button>
+        </div>
+      </div>
+      <div class="pdf-modal-body">
+        <p class="pdf-modal-loading" id="pdfModalLoading">Generando PDF…</p>
+        <iframe id="pdfModalFrame" title="Vista previa PDF"></iframe>
+      </div>
+    </div>
+  </div>
+
 <script src="/static/js/app.js"></script>
 </body>
 </html>

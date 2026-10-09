@@ -524,6 +524,38 @@ def skip_current():
     return jsonify({"ok": True})
 
 
+
+@app.route("/api/preview_pdf/<int:record_id>")
+def api_preview_pdf(record_id):
+    """Genera al vuelo el PDF de un registro y lo sirve inline para el modal."""
+    from services.pdf_service import generate_individual_pdf
+    from flask import Response
+    import tempfile
+    import io
+
+    records = work_state.get("records") or []
+    record = next((r for r in records if int(r.get("id", -1)) == int(record_id)), None)
+    if not record:
+        return jsonify({"ok": False, "error": "Registro no encontrado"}), 404
+    if not record.get("resultado") and record.get("estado") not in ("Completado", "Sin información", "Error"):
+        return jsonify({"ok": False, "error": "Este registro aún no tiene resultado para previsualizar"}), 400
+
+    placa = re.sub(r"[^A-Za-z0-9]", "", str(record.get("placa") or "SINPLACA"))
+    tmp_dir = Path(tempfile.gettempdir())
+    tmp = tmp_dir / f"runt_preview_{placa}_{record_id}.pdf"
+    try:
+        generate_individual_pdf(record, str(tmp))
+        data = tmp.read_bytes()
+        resp = Response(data, mimetype="application/pdf")
+        resp.headers["Content-Disposition"] = f'inline; filename="RUNT_{placa}.pdf"'
+        resp.headers["Content-Length"] = str(len(data))
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        return resp
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/generate_pdf", methods=["POST"])
 def api_generate_pdf():
     """

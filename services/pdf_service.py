@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import unicodedata
 import io
 from pathlib import Path
 from typing import Any, Dict, List
@@ -200,6 +201,119 @@ def _grid_table(tabla: Dict[str, Any]):
     return t
 
 
+
+
+
+def _norm_col(s: str) -> str:
+    s = (s or "").lower().strip()
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    return s
+
+
+def _soat_block(tabla: Dict[str, Any]):
+    """Réplica visual de la tabla 'Póliza SOAT' del portal RUNT:
+    encabezado azul, 7 columnas, VIGENTE en verde con check.
+    Anchos calibrados para que el número de póliza NO se cruce con fechas.
+    """
+    cols_raw = [str(c or "").strip() for c in (tabla.get("columnas") or [])]
+    filas = tabla.get("filas") or []
+    if not cols_raw or not filas:
+        return None
+
+    cols_n = [_norm_col(c) for c in cols_raw]
+
+    def idx(*keys):
+        for i, c in enumerate(cols_n):
+            if any(k in c for k in keys):
+                return i
+        return -1
+
+    i_poliza = idx("numero de poliza", "nro de poliza", "poliza")
+    i_exp = idx("expedicion")
+    i_ini = idx("inicio")
+    i_fin = idx("fin de vigencia", "fin vigencia", "fecha fin")
+    i_ent = idx("entidad")
+    i_tar = idx("tarifa", "codigo")
+    i_est = idx("estado")
+    if i_poliza < 0 and len(cols_raw) >= 7:
+        i_poliza, i_exp, i_ini, i_fin, i_ent, i_tar, i_est = 0, 1, 2, 3, 4, 5, 6
+
+    headers = [
+        "Número de póliza",
+        "Fecha expedición",
+        "Fecha inicio de vigencia",
+        "Fecha fin de vigencia",
+        "Entidad expide SOAT",
+        "Código tarifa",
+        "Estado",
+    ]
+    indices = [i_poliza, i_exp, i_ini, i_fin, i_ent, i_tar, i_est]
+
+    # Misma proporción visual que el portal (póliza y entidad más anchas)
+    weights = [1.45, 0.92, 0.98, 0.98, 1.55, 0.72, 0.90]
+    col_w = [CONTENT_W * (w / sum(weights)) for w in weights]
+
+    th = ParagraphStyle("runt_soat_th", fontName="Helvetica-Bold", fontSize=7.0,
+                        leading=8.5, textColor=colors.white, alignment=1)
+    td = ParagraphStyle("runt_soat_td", fontName="Helvetica", fontSize=7.2,
+                        leading=9.0, textColor=INK, alignment=1)
+    td_left = ParagraphStyle("runt_soat_td_l", fontName="Helvetica", fontSize=7.0,
+                             leading=9.0, textColor=INK, alignment=0)
+    td_pol = ParagraphStyle("runt_soat_pol", fontName="Helvetica", fontSize=7.4,
+                            leading=9.0, textColor=INK, alignment=1)
+    td_ok = ParagraphStyle("runt_soat_ok", fontName="Helvetica-Bold", fontSize=7.4,
+                           leading=9.0, textColor=OK, alignment=1)
+
+    data = [[Paragraph(escape(h), th) for h in headers]]
+
+    for f in filas:
+        cells = [str(x or "").strip() for x in (list(f) + [""] * 8)]
+        def get(i):
+            return cells[i] if 0 <= i < len(cells) else ""
+        vals = [get(i) for i in indices]
+        # Estado limpio + check verde como en el portal
+        est = vals[6]
+        for noise in ("check_circle", "check_circle_outline", "●", "•", "✓", "✅"):
+            est = est.replace(noise, "")
+        est = " ".join(est.split())
+        vals[6] = est
+
+        row = []
+        for i, val in enumerate(vals):
+            if i == 0:
+                row.append(Paragraph(escape(val or "—"), td_pol))
+            elif i == 4:
+                row.append(Paragraph(escape(val or "—"), td_left))
+            elif i == 6:
+                up = (val or "").upper()
+                if "VIGENTE" in up and "NO" not in up:
+                    row.append(Paragraph("●  " + escape(val), td_ok))
+                else:
+                    row.append(Paragraph(escape(val or "—"), td))
+            else:
+                row.append(Paragraph(escape(val or "—"), td))
+        data.append(row)
+
+    t = Table(data, colWidths=col_w, repeatRows=1)
+    cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#E5E7EB")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D1D5DB")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, 0), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+        ("TOPPADDING", (0, 1), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+    ]
+    t.setStyle(TableStyle(cmds))
+    return [t]
+
+
+
 def _section_title(texto):
     t = Table([[Paragraph(escape(texto), ParagraphStyle("st", parent=S["h2"], textColor=colors.white,
                                                          spaceBefore=0, spaceAfter=0, fontSize=10))]],
@@ -304,16 +418,20 @@ def _vehiculo(story, r, n, total):
         story += [Spacer(1, 8), _section_title("Información general del vehículo"), Spacer(1, 2),
                   _kv_table(res.get("general", {}), columns=2)]
 
-    # Póliza SOAT: tabla estructurada (legible) y, si existe, captura de apoyo
+    # Póliza SOAT: tabla con el mismo formato del portal (datos reales).
+    # No usamos la captura escalada: al reducirla el número se pega con la fecha.
     soat = res.get("soat") or {}
     story += [Spacer(1, 8), _section_title("Póliza SOAT")]
-    tabla_soat = None
-    if soat.get("disponible") and (soat.get("columnas") or soat.get("filas")):
-        tabla_soat = _grid_table(soat)
-    if tabla_soat is not None:
-        story += [Spacer(1, 3), tabla_soat]
+    bloques = None
+    if soat.get("columnas") and soat.get("filas"):
+        bloques = _soat_block(soat)
+    if bloques:
+        story += [Spacer(1, 4)] + bloques
     else:
-        captura_soat = _captura_flowable(soat["captura_png"]) if soat.get("captura_png") else None
+        # Solo si no hubo datos estructurados, intentar captura
+        captura_soat = None
+        if soat.get("captura_png"):
+            captura_soat = _captura_flowable(soat["captura_png"], max_height=PAGE_H - 2 * MARGIN - 30 * mm)
         if captura_soat is not None:
             story += [Spacer(1, 3), captura_soat]
         else:

@@ -102,10 +102,13 @@
         : '<span class="muted">—</span>';
       const quitar = estado === "Pendiente"
         ? `<button type="button" class="row-remove" data-id="${r.id}" title="Quitar">&times;</button>` : "";
+      const verPdf = ["Completado", "Sin información", "Error"].includes(estado)
+        ? `<button type="button" class="btn-preview" data-preview-id="${r.id}" data-placa="${esc(r.placa)}" title="Ver PDF">Vista previa</button>`
+        : "";
       return `<tr class="${activo ? "active" : ""}"><td>${r.id}</td><td class="mono">${esc(r.placa)}</td>` +
         `<td class="mono">${esc(r.cedula)}</td><td>${poliza}</td>` +
         `<td><span class="pill ${pill}">${esc(estado)}</span>${msg}</td>` +
-        `<td class="c-actions">${quitar}</td></tr>`;
+        `<td class="c-actions">${verPdf}${quitar}</td></tr>`;
     }).join("");
   }
 
@@ -495,4 +498,110 @@
   }
 
   logLine("SISTEMA", "Aplicación iniciada.");
+
+
+  // ── Modal PDF (elementos se buscan al abrir, por si el DOM cambia) ──
+  function openPdfModal(id, placa) {
+    const pdfModal = document.getElementById("pdfModal");
+    const pdfModalFrame = document.getElementById("pdfModalFrame");
+    const pdfModalTitle = document.getElementById("pdfModalTitle");
+    const pdfModalDownload = document.getElementById("pdfModalDownload");
+    const pdfModalLoading = document.getElementById("pdfModalLoading");
+    const url = "/api/preview_pdf/" + id + "?t=" + Date.now();
+
+    if (!pdfModal) {
+      // Si no hay modal, abrir directo en pestaña
+      window.open(url, "_blank");
+      return;
+    }
+
+    if (pdfModalTitle) pdfModalTitle.textContent = "Vista previa — " + (placa || ("#" + id));
+    if (pdfModalLoading) {
+      pdfModalLoading.style.display = "block";
+      pdfModalLoading.textContent = "Generando PDF…";
+    }
+    if (pdfModalFrame) {
+      pdfModalFrame.style.display = "none";
+      pdfModalFrame.src = "about:blank";
+    }
+
+    pdfModal.classList.remove("hidden");
+    pdfModal.style.display = "flex";
+    document.body.style.overflow = "hidden";
+
+    fetch(url, { credentials: "same-origin" })
+      .then(async (res) => {
+        const ct = (res.headers.get("content-type") || "").toLowerCase();
+        if (!res.ok || ct.indexOf("pdf") === -1) {
+          let msg = "No se pudo generar la vista previa";
+          try {
+            const j = await res.json();
+            if (j && j.error) msg = j.error;
+          } catch (_) {}
+          if (pdfModalLoading) pdfModalLoading.textContent = msg;
+          if (typeof showToast === "function") showToast(msg, "error");
+          // Abrir en pestaña como respaldo
+          window.open(url, "_blank");
+          return;
+        }
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+        if (pdfModalFrame) {
+          pdfModalFrame.src = blobUrl;
+          pdfModalFrame.style.display = "block";
+        }
+        if (pdfModalLoading) pdfModalLoading.style.display = "none";
+        if (pdfModalDownload) {
+          pdfModalDownload.href = blobUrl;
+          pdfModalDownload.setAttribute("download", "RUNT_" + (placa || id) + ".pdf");
+        }
+      })
+      .catch((err) => {
+        const msg = "Error al cargar PDF: " + err.message;
+        if (pdfModalLoading) pdfModalLoading.textContent = msg;
+        if (typeof showToast === "function") showToast(msg, "error");
+        window.open(url, "_blank");
+      });
+  }
+
+  function closePdfModal() {
+    const pdfModal = document.getElementById("pdfModal");
+    const pdfModalFrame = document.getElementById("pdfModalFrame");
+    if (!pdfModal) return;
+    pdfModal.classList.add("hidden");
+    pdfModal.style.display = "none";
+    try {
+      if (pdfModalFrame && pdfModalFrame.src && pdfModalFrame.src.indexOf("blob:") === 0) {
+        URL.revokeObjectURL(pdfModalFrame.src);
+      }
+    } catch (_) {}
+    if (pdfModalFrame) {
+      pdfModalFrame.src = "about:blank";
+      pdfModalFrame.style.display = "none";
+    }
+    document.body.style.overflow = "";
+  }
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#pdfModalClose") || e.target.closest("#pdfModalBackdrop")) {
+      closePdfModal();
+      return;
+    }
+    const btn = e.target.closest("[data-preview-id]");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = Number(btn.getAttribute("data-preview-id"));
+    const placa = btn.getAttribute("data-placa") || "";
+    if (!id) {
+      if (typeof showToast === "function") showToast("Registro inválido", "error");
+      return;
+    }
+    openPdfModal(id, placa);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closePdfModal();
+  });
+
 })();
