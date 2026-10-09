@@ -150,7 +150,7 @@ def _footer(canvas, doc):
     canvas.line(MARGIN, 13 * mm, PAGE_W - MARGIN, 13 * mm)
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(MUTED)
-    canvas.drawString(MARGIN, 9 * mm, f"RUNT BOT  |  Generado el {doc._generado:%d/%m/%Y %H:%M}")
+    canvas.drawString(MARGIN, 9 * mm, f"Consulta RUNT  |  Generado el {doc._generado:%d/%m/%Y %H:%M}")
     canvas.drawRightString(PAGE_W - MARGIN, 9 * mm, f"Página {doc.page}")
     canvas.setFillColor(MAGENTA)
     canvas.rect(0, PAGE_H - 3 * mm, PAGE_W, 3 * mm, stroke=0, fill=1)
@@ -158,7 +158,7 @@ def _footer(canvas, doc):
 
 
 def _portada(story, records, generado):
-    band = Table([[Paragraph("RUNT BOT", ParagraphStyle("t", fontName="Helvetica-Bold", fontSize=22,
+    band = Table([[Paragraph("Consulta RUNT", ParagraphStyle("t", fontName="Helvetica-Bold", fontSize=22,
                                                          leading=26, textColor=colors.white)),
                    Paragraph("Informe de consultas vehiculares", ParagraphStyle("t2", fontName="Helvetica", fontSize=11,
                                                                                 leading=14, textColor=colors.white, alignment=2))]],
@@ -255,7 +255,7 @@ def _build(records: List[Dict[str, Any]], output_path: str) -> str:
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     generado = dt.datetime.now()
     doc = SimpleDocTemplate(output_path, pagesize=A4, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=12 * mm,
-                            bottomMargin=14 * mm, title="RUNT BOT - Consultas vehiculares", author="RUNT BOT")
+                            bottomMargin=14 * mm, title="Consulta RUNT - Consultas vehiculares", author="Consulta RUNT")
     doc._generado = generado
 
     story: list = []
