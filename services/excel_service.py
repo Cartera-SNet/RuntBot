@@ -176,3 +176,30 @@ def load_excel(file_path: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         "columnas": [c for c in (rows[header_idx] if header_idx < len(rows) else []) if c],
     }
     return records, meta
+
+
+def build_template() -> bytes:
+    """Plantilla .xlsx de ejemplo (columnas Placa y Cédula, con la cédula en
+    formato Texto para que Excel no la dañe convirtiéndola en número)."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Consultas"
+    ws.append(["Placa", "Cedula"])
+    ws.append(["EVJ071", "1048206552"])
+    ws.append(["ABC123", "1234567890"])
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0B2A6F")
+    for row in ws.iter_rows(min_row=2, min_col=2, max_col=2):
+        for c in row:
+            c.number_format = "@"  # Texto: evita que Excel convierta la cédula a numero
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 18
+
+    import io
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
