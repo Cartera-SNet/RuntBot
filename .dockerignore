@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+uploads/*
+resultados/*
+!uploads/.gitkeep
+!resultados/.gitkeep
+iniciar.bat
+*.log

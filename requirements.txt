@@ -1,0 +1,19 @@
+# Versiones con rango en vez de fijas: las exactas de antes (playwright 1.48,
+# Pillow 10.4) no tenian "wheels" (binarios ya compilados) para Python 3.14,
+# asi que pip intentaba compilarlas desde el codigo fuente y eso requiere
+# Visual Studio Build Tools en Windows -> fallaba. Desde playwright >=1.55 y
+# Pillow >=12.0 ya hay wheels oficiales para 3.14, por eso el rango minimo
+# sube a esas versiones. No fija un tope de version para que siempre tome la
+# mas nueva disponible (que es, ademas, la que mejor soporta Python nuevos).
+flask>=3.0
+playwright>=1.55
+openpyxl>=3.1
+xlrd>=2.0.1
+reportlab>=4.2
+Pillow>=12.0
+werkzeug>=3.0
+pytesseract>=0.3.13
+gunicorn>=22.0
+# gunicorn: servidor de produccion para Railway/Docker. El dev server de
+# Flask (app.run) es solo para uso local; "WARNING: this is a development
+# server" significa exactamente eso, no esta pensado para quedar expuesto.
