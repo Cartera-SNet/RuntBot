@@ -12,7 +12,8 @@
 # "playwright install --with-deps" resuelva las librerías de Chromium,
 # que es el camino recomendado por Playwright para Debian/Ubuntu.
 
-FROM python:3.12-slim
+# Espejo público de AWS (evita 429 Too Many Requests de Docker Hub)
+FROM public.ecr.aws/docker/library/python:3.12-slim
 
 # Evita prompts interactivos de apt y mantiene la imagen más liviana.
 ENV DEBIAN_FRONTEND=noninteractive \
